@@ -85,6 +85,8 @@ int hub_engine_readcb(vde_connection *conn, vde_pkt *pkt, void *arg)
     iter = vde_list_next(iter);
   }
 
+  /* No further action required, packet is discarded. */
+  vdepool_pkt_discard(pkt);
   return 0;
 }
 

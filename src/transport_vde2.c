@@ -32,6 +32,7 @@
 #include <vde3/transport.h>
 #include <vde3/context.h>
 #include <vde3/packet.h>
+#include <vde3/mempool.h>
 
 #define LISTEN_QUEUE 15
 #define MAX_HEAD_SZ 4 /* size of prellocated space before payload */
@@ -69,12 +70,6 @@ typedef struct {
   char description[];
 } __attribute__((packed)) vde2_request;
 // end of vde2 datasock.c
-
-typedef struct {
-  unsigned int numtries;
-  vde_pkt pkt;
-  char data[PKT_DATA_SZ];
-} vde2_pkt;
 
 typedef struct {
   int data_fd;
@@ -142,7 +137,6 @@ err_close:
 
 void vde2_conn_read_data_event(int data_fd, short event_type, void *arg)
 {
-  vde2_pkt stack_pkt;
   vde_pkt *pkt;
   struct sockaddr sock;
   int len;
@@ -153,11 +147,12 @@ void vde2_conn_read_data_event(int data_fd, short event_type, void *arg)
 
   if ( (vde_connection_get_pkt_headsize(conn) <= MAX_HEAD_SZ)
         && (vde_connection_get_pkt_tailsize(conn) <= MAX_TAIL_SZ) ) {
-    pkt = &stack_pkt.pkt;
-    vde_pkt_init(pkt, PKT_DATA_SZ, vde_connection_get_pkt_headsize(conn),
-                 vde_connection_get_pkt_tailsize(conn));
+	pkt = vde_pkt_new(VDE_PACKET_SIZE, vde_connection_get_pkt_headsize(conn), vde_connection_get_pkt_tailsize(conn));
+	if (!pkt) {
+		vde_error("%s: Cannot allocate memory for received packet, skipping.", __PRETTY_FUNCTION__);
+		return;
+	}
   } else {
-    // XXX: perform dynamic allocation
     vde_warning("%s: requested head + tail size too large, skipping",
                 __PRETTY_FUNCTION__);
     return;
@@ -169,6 +164,9 @@ void vde2_conn_read_data_event(int data_fd, short event_type, void *arg)
   if (len >= sizeof(struct eth_hdr)) {
     // XXX: set hdr version and type
     pkt->hdr->pkt_len = len;
+
+	/* Reduce data size to match current content */
+	pkt->data_size = len;
     if (vde_connection_call_read(conn, pkt)) {
       cb_errno = errno;
     }
@@ -185,7 +183,6 @@ void vde2_conn_read_data_event(int data_fd, short event_type, void *arg)
     vde_warning("%s: EOF from data_fd %d: %s", __PRETTY_FUNCTION__,
                 v2_conn->data_fd, strerror(errno));
   }
-
   // XXX: free packet if previously allocated with dynamic allocation
 
   if (cb_errno == EPIPE) {
@@ -197,15 +194,18 @@ void vde2_conn_read_data_event(int data_fd, short event_type, void *arg)
 void vde2_conn_write_data_event(int data_fd, short event_type, void *arg)
 {
   int len;
-  vde2_pkt *v2_pkt;
   vde_pkt *pkt;
   int cb_errno = 0;
   vde2_conn *v2_conn = (vde2_conn *)arg;
   vde_connection *conn = v2_conn->conn;
 
-  v2_pkt = vde_queue_pop_tail(v2_conn->pkt_queue);
-  while (v2_pkt != NULL) {
-    pkt = &v2_pkt->pkt;
+  /* TODO DLX: rewrite with different queue policy,
+   * because this circular re-insertion mechanism with
+   * multiple retries causes ugly re-ordering.
+   */
+
+  pkt = vde_queue_pop_tail(v2_conn->pkt_queue);
+  while (pkt != NULL) {
     len = sendto(v2_conn->data_fd, pkt->payload, pkt->hdr->pkt_len, 0,
                  (const struct sockaddr *)&v2_conn->remote_sa,
                  sizeof(struct sockaddr_un));
@@ -213,7 +213,7 @@ void vde2_conn_write_data_event(int data_fd, short event_type, void *arg)
       if (vde_connection_call_write(conn, pkt)) {
         cb_errno = errno;
       }
-      vde_cached_free_type(vde2_pkt, v2_pkt);
+      vdepool_pkt_discard(pkt);
       if (cb_errno == EPIPE) {
         goto err_close;
       }
@@ -221,7 +221,7 @@ void vde2_conn_write_data_event(int data_fd, short event_type, void *arg)
       if (vde_connection_call_error(conn, pkt, CONN_WRITE_CLOSED)) {
         cb_errno = errno;
       }
-      vde_cached_free_type(vde2_pkt, v2_pkt);
+      vdepool_pkt_discard(pkt);
       if (cb_errno == EPIPE) {
         goto err_close;
       } else {
@@ -230,24 +230,24 @@ void vde2_conn_write_data_event(int data_fd, short event_type, void *arg)
         break;
       }
     } else { /* (0 < len < pkt_len) || (len < 0 && errno == EAGAIN) */
-      v2_pkt->numtries++;
-      if (v2_pkt->numtries > vde_connection_get_send_maxtries(conn)) {
+      pkt->numtries++;
+      if (pkt->numtries > vde_connection_get_send_maxtries(conn)) {
         if (vde_connection_call_error(conn, pkt, CONN_WRITE_DELAY)) {
           cb_errno = errno;
         }
-        vde_cached_free_type(vde2_pkt, v2_pkt);
+        vdepool_pkt_discard(pkt);
         if (cb_errno == EPIPE) {
           goto err_close;
         }
       } else {
-        vde_queue_push_tail(v2_conn->pkt_queue, v2_pkt);
+        vde_queue_push_tail(v2_conn->pkt_queue, pkt);
       }
       break; // give up sending
     }
-    v2_pkt = vde_queue_pop_tail(v2_conn->pkt_queue);
+    pkt = vde_queue_pop_tail(v2_conn->pkt_queue);
   }
 
-  if (v2_pkt == NULL) {
+  if (pkt == NULL) {
     vde_context_event_del(vde_connection_get_context(conn),
                           v2_conn->data_ev_wr);
     v2_conn->data_ev_wr = NULL;
@@ -262,7 +262,7 @@ err_close:
 
 int vde2_conn_write(vde_connection *conn, vde_pkt *pkt)
 {
-  vde2_pkt *v2_pkt;
+  vde_pkt *v2_pkt;
   vde2_conn *v2_conn = vde_connection_get_priv(conn);
 
   if (vde_queue_get_length(v2_conn->pkt_queue) >= MAXQLEN) {
@@ -271,14 +271,14 @@ int vde2_conn_write(vde_connection *conn, vde_pkt *pkt)
     errno = EAGAIN;
     return -1; // discard pkt
   }
-  if (pkt->data_size > PKT_DATA_SZ) {
-    // XXX: should alloc a struct greater than sizeof(vde2_pkt)
-    vde_warning("%s: packet size larger than vde2_pkt, discarding",
-                __PRETTY_FUNCTION__);
+  if (pkt->data_size > VDE_PACKET_SIZE) {
+    // XXX: should alloc a struct greater than sizeof(vde_pkt)
+    vde_warning("%s: packet size (%d) larger than vde_pkt (%d), discarding",
+                __PRETTY_FUNCTION__, pkt->data_size, VDE_PACKET_SIZE);
     errno = EBADMSG;
     return -1;
   }
-  v2_pkt = vde_cached_alloc(sizeof(vde2_pkt));
+  v2_pkt = vdepool_pkt_compact_cpy(pkt);
   if (v2_pkt == NULL) {
     vde_warning("%s: cannot alloc new pkt, discarding", __PRETTY_FUNCTION__);
     errno = ENOMEM;
@@ -286,8 +286,6 @@ int vde2_conn_write(vde_connection *conn, vde_pkt *pkt)
   }
 
   v2_pkt->numtries = 0;
-
-  vde_pkt_compact_cpy(&v2_pkt->pkt, pkt);
 
   // XXX: check push ok
   vde_queue_push_head(v2_conn->pkt_queue, v2_pkt);
@@ -297,7 +295,8 @@ int vde2_conn_write(vde_connection *conn, vde_pkt *pkt)
                             vde_connection_get_context(conn),
                             v2_conn->data_fd,
                             VDE_EV_WRITE|VDE_EV_PERSIST,
-                            vde_connection_get_send_maxtimeout(conn),
+							0, 
+                            //vde_connection_get_send_maxtimeout(conn),
                             &vde2_conn_write_data_event,
                             (void *)v2_conn);
   }
@@ -306,7 +305,7 @@ int vde2_conn_write(vde_connection *conn, vde_pkt *pkt)
 
 void vde2_conn_close(vde_connection *conn)
 {
-  vde2_pkt *pkt;
+  vde_pkt *pkt;
   vde2_conn *v2_conn = vde_connection_get_priv(conn);
   vde_context *ctx = vde_connection_get_context(conn);
 
@@ -333,8 +332,7 @@ void vde2_conn_close(vde_connection *conn)
   }
   pkt = vde_queue_pop_tail(v2_conn->pkt_queue);
   while (pkt != NULL) {
-    // XXX: handle dynamic allocation case
-    vde_cached_free_type(vde2_pkt, pkt);
+	vdepool_pkt_discard(pkt);
     pkt = vde_queue_pop_tail(v2_conn->pkt_queue);
   }
   vde_queue_delete(v2_conn->pkt_queue);
