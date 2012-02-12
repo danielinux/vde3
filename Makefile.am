@@ -26,6 +26,7 @@ EXTRA_DIST = $(GEN_CHECKER) $(WRAPPERS_JSON) \
 include_HEADERS = src/include/vde3.h
 
 noinst_HEADERS = \
+  src/include/vde3/mempool.h \
   src/include/vde3/localconnection.h \
   src/include/vde3/common.h \
   src/include/vde3/attributes.h \
@@ -42,6 +43,7 @@ noinst_HEADERS = \
   src/include/vde3/vde_ordhash.h
 
 VDE_SRC = \
+  src/mempool.c \
   src/context.c \
   src/component.c \
   src/logging.c \
@@ -89,7 +91,7 @@ lib_LTLIBRARIES = src/libvde.la
 src_libvde_la_SOURCES = $(VDE_SRC)
 # XXX consider adding -export-symbols <file.sym>
 src_libvde_la_LDFLAGS = $(GLIB_LIBS) $(JSONC_LIBS) -ldl -export-dynamic \
-  -version-info $(LIBVDE_VERSION)
+  -version-info $(LIBVDE_VERSION) 
 # XXX define this better
 src_libvde_la_CPPFLAGS = \
   -DVDE_DEFAULT_MODULES_PATH='{"$(modulesdir)", "src/.libs", NULL}' \
@@ -172,4 +174,4 @@ install-data-local: doxygen-install
 
 clean-local: doxygen-clean
 
-uninstall-local: doxygen-uninstall
+
