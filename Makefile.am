@@ -91,7 +91,7 @@ lib_LTLIBRARIES = src/libvde.la
 src_libvde_la_SOURCES = $(VDE_SRC)
 # XXX consider adding -export-symbols <file.sym>
 src_libvde_la_LDFLAGS = $(GLIB_LIBS) $(JSONC_LIBS) -ldl -export-dynamic \
-  -version-info $(LIBVDE_VERSION) 
+  -version-info $(LIBVDE_VERSION) -lpthread
 # XXX define this better
 src_libvde_la_CPPFLAGS = \
   -DVDE_DEFAULT_MODULES_PATH='{"$(modulesdir)", "src/.libs", NULL}' \

@@ -23,6 +23,7 @@
 #include <vde3/engine.h>
 #include <vde3/context.h>
 #include <vde3/connection.h>
+#include <vde3/mempool.h>
 
 #include <engine_hub_commands.h>
 

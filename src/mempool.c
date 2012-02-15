@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <pthread.h>
 #define POOL_GROWTH 128 /* In packets, must be divisible by 8 */
 
 struct vdepool
@@ -20,6 +21,11 @@ typedef struct vdepool vdepool;
 static vdepool *pool = NULL;
 static vdepool *packets = NULL;
 
+static pthread_mutex_t mempool_lock, references_lock;
+
+/* Allocate a new slice for the pool.
+ * Must be already locked when entering this.
+ */
 static int vdepool_alloc(struct vdepool **list, int elem_size, uint32_t size)
 {
 	uint32_t total_size = size * elem_size + sizeof(struct vdepool);
@@ -47,7 +53,6 @@ static int vdepool_alloc(struct vdepool **list, int elem_size, uint32_t size)
 	slice->free_count = size;
 	slice->next = *list;
 	*list = slice;
-	fprintf(stderr, "New slice for elements of %d bytes!\n", elem_size);
 	return 0;
 }
 
@@ -72,12 +77,13 @@ static vde_pkt *reference_alloc(void)
 	int i, j;
 	vde_pkt *p = NULL;
 	int position = -1;
-	struct vdepool *cur = packets;
+	struct vdepool *cur;
 	int counter=0;
 
+	pthread_mutex_lock(&references_lock);
 	if (!packets && vdepool_alloc(&packets, sizeof(vde_pkt), POOL_GROWTH))
-		return NULL;
-
+		goto out_unlock;
+	cur = packets;
 	while(cur) {
 		if (cur->free_count == 0) {
 			counter++;
@@ -94,7 +100,7 @@ static vde_pkt *reference_alloc(void)
 						p = (vde_pkt *)(cur->content + sizeof(vde_pkt) * position);
 						p->_pool_pool = cur;
 						p->_pool_pos = position;
-						return p;
+						goto out_unlock;
 					}
 				}
 			}
@@ -104,13 +110,15 @@ static vde_pkt *reference_alloc(void)
 	if (position < 0) {
 		/* Not enough space. Try to grow */
 		if (vdepool_alloc(&packets, sizeof(vde_pkt), POOL_GROWTH) == 0) {
+			pthread_mutex_unlock(&references_lock);
 			return reference_alloc();
 		}
 	}
-	return NULL;
+out_unlock:
+	pthread_mutex_unlock(&references_lock);
+	return p;
 }
 
-/* XXX: Lock the pool if using multithread */
 vde_pkt *vdepool_pkt_new(int data_size)
 {
 	int i, j;
@@ -118,9 +126,9 @@ vde_pkt *vdepool_pkt_new(int data_size)
 	int position = -1;
 	struct vdepool *cur = pool;
 
-
+	pthread_mutex_lock(&mempool_lock);
 	if (!pool && vdepool_alloc(&pool, VDE_PACKET_SIZE, POOL_GROWTH))
-		return NULL;
+		goto out_unlock;
 
 	while(cur) {
 		if (cur->free_count == 0) {
@@ -143,17 +151,17 @@ vde_pkt *vdepool_pkt_new(int data_size)
 	if (position < 0) {
 		/* Not enough space. Try to grow */
 		if (vdepool_alloc(&pool, VDE_PACKET_SIZE, POOL_GROWTH) == 0) {
+			pthread_mutex_unlock(&mempool_lock);
 			return vdepool_pkt_new(data_size);
-		} else {
-			return NULL;
-		}
+		} else
+			goto out_unlock;
 	}
 
 found:
 	if (position >= 0) {
 		p = reference_alloc();
 		if (!p)
-			return NULL;
+			goto out_unlock;
 		p->pkt = (vde_pkt_content *) (cur->content + VDE_PACKET_SIZE * position);
 		p->pkt->_pool = cur;
 		set_bit(cur, position);
@@ -165,17 +173,21 @@ found:
   		p->tail = p->pkt->data + data_size;
   		p->data_size = data_size;
 	}
+out_unlock:
+	pthread_mutex_unlock(&mempool_lock);
 	return p;
 }
 
 static void reference_free(vde_pkt *p)
 {
+	pthread_mutex_lock(&references_lock);
 	unset_bit(p->_pool_pool, p->_pool_pos);
+	pthread_mutex_unlock(&references_lock);
 }
 
-/* XXX: Lock the pool if using multithread */
 void vdepool_pkt_discard(vde_pkt *p)
 {
+	pthread_mutex_lock(&mempool_lock);
 	p->pkt->usage_count--;
 	if (p->pkt->usage_count < 1) {
 		unset_bit(p->pkt->_pool, p->pkt->_pos);
@@ -183,6 +195,7 @@ void vdepool_pkt_discard(vde_pkt *p)
 	/* In either case, this copy of the 
 	packet is not needed any more. */
 	reference_free(p);
+	pthread_mutex_unlock(&mempool_lock);
 }
 
 vde_pkt *vdepool_pkt_compact_cpy(vde_pkt *orig)

@@ -16,6 +16,7 @@
  */
 
 #include <vde3.h>
+#include <vde3/localconnection.h>
 #include <stdio.h>
 #include <event.h>
 

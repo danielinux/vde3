@@ -26,11 +26,15 @@ AC_PROG_LIBTOOL
 VDE_CHECK_LIB_HEADER([event], [event_init], [event.h], ,
                      AC_MSG_ERROR([Could not find libevent]))
 
+VDE_CHECK_LIB_HEADER([pthread], [pthread_create], [pthread.h], ,
+                  AC_MSG_ERROR([Could not find pthread]))
+
 PKG_CHECK_MODULES(GLIB, glib-2.0, ,
                   AC_MSG_ERROR([Could not find glib 2.0]))
 
 PKG_CHECK_MODULES(JSONC, json, ,
                   AC_MSG_ERROR([Could not find json-c]))
+
 
 # check for python and python-simplejson used by gen_checker.py
 AC_PATH_PROG(PYTHON, [python], AC_MSG_ERROR([Could not find python]))
