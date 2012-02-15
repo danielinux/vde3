@@ -4,8 +4,6 @@
 
 vde_pkt *vdepool_pkt_new(int data_size);
 void vdepool_pkt_discard(vde_pkt *p);
-vde_pkt *vdepool_pkt_new(int data_size);
-void vdepool_pkt_discard(vde_pkt *p);
 
 vde_pkt *vdepool_pkt_compact_cpy(vde_pkt *orig);
 vde_pkt *vdepool_pkt_cpy(vde_pkt *orig);
