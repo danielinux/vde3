@@ -236,6 +236,7 @@ void *v2_dequeuer(void *arg)
 err_close:
   vde_connection_fini(conn);
   vde_connection_delete(conn);
+  printf("Dequeuer terminated.\n");
   return NULL;
 }
 
@@ -243,13 +244,6 @@ int vde2_conn_write(vde_connection *conn, vde_pkt *pkt)
 {
   vde_pkt *v2_pkt;
   vde2_conn *v2_conn = vde_connection_get_priv(conn);
-
-  v2_pkt = vdepool_pkt_compact_cpy(pkt);
-  if (v2_pkt == NULL) {
-    vde_warning("%s: cannot alloc new pkt, discarding", __PRETTY_FUNCTION__);
-    errno = ENOMEM;
-    return -1;
-  }
 
   v2_pkt = vdepool_pkt_compact_cpy(pkt);
   if (v2_pkt == NULL) {
@@ -513,27 +507,21 @@ void vde2_accept(int listen_fd, short event_type, void *arg)
   v2_conn->ctl_fd = new;
   v2_conn->conn = conn;
   v2_conn->transport = component;
-  printf("LINE: %d\n", __LINE__);
   queue_init(&v2_conn->pkt_queue);
-  printf("LINE: %d\n", __LINE__);
   qfifo_setup(&v2_conn->pkt_queue, MAXQLEN * VDE_PACKET_SIZE);
 
   // XXX: check error on list
   tr->pending_conns = vde_list_prepend(tr->pending_conns, v2_conn);
-  printf("LINE: %d\n", __LINE__);
 
   pthread_create(&v2_conn->dequeuer, 0, v2_dequeuer, conn);
-  printf("LINE: %d\n", __LINE__);
 
   vde_connection_init(conn, ctx, sizeof(struct eth_frame), &vde2_conn_write,
                       &vde2_conn_close, (void *)v2_conn);
-  printf("LINE: %d\n", __LINE__);
 
   // XXX: check event NULL and define a timeout
   v2_conn->ctl_ev = vde_context_event_add(ctx, v2_conn->ctl_fd, VDE_EV_READ,
                                           NULL, &vde2_srv_get_request,
                                           (void *)v2_conn);
-  printf("LINE: %d\n", __LINE__);
   return;
 
 error_conn_del:
