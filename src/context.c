@@ -21,6 +21,7 @@
 #include <vde3/common.h>
 #include <vde3/component.h>
 #include <vde3/context.h>
+#include <vde3/mempool.h>
 
 /**
  * @brief Lookup a vde 3 module in the context
@@ -61,6 +62,7 @@ static vde_module *vde_context_lookup_module(vde_context *ctx,
 
 int vde_context_new(vde_context **ctx)
 {
+  mempool_init();
   if (!ctx) {
     vde_error("%s: context pointer reference is NULL", __PRETTY_FUNCTION__);
     errno = EINVAL;

@@ -27,6 +27,7 @@ include_HEADERS = src/include/vde3.h
 
 noinst_HEADERS = \
   src/include/vde3/mempool.h \
+  src/include/vde3/queue.h \
   src/include/vde3/localconnection.h \
   src/include/vde3/common.h \
   src/include/vde3/attributes.h \
@@ -44,6 +45,7 @@ noinst_HEADERS = \
 
 VDE_SRC = \
   src/mempool.c \
+  src/queue.c \
   src/context.c \
   src/component.c \
   src/logging.c \

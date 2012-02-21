@@ -13,4 +13,6 @@ vde_pkt *vdepool_pkt_compact_deepcpy(vde_pkt *orig);
 void vde_pkt_setprops(vde_pkt *pkt, unsigned int head, unsigned int tail);
 vde_pkt *vde_pkt_new(unsigned int payload_sz, unsigned int head, unsigned int tail);
 
+void mempool_init(void);
+
 #endif

@@ -706,7 +706,7 @@ static void ctrl_conn_fini_noengine(ctrl_conn *cc)
     vde_free(pkt);
     pkt = vde_queue_pop_tail(cc->out_queue);
   }
-  vde_queue_delete(cc->out_queue);
+  //vde_queue_delete(cc->out_queue);
 
   ctx = vde_connection_get_context(cc->conn);
 
@@ -832,7 +832,7 @@ int ctrl_engine_newconn(vde_component *component, vde_connection *conn,
     return -1;
   }
   cc->conn = conn;
-  cc->out_queue = vde_queue_init();
+  //cc->out_queue = vde_queue_init();
   cc->engine = ctrl;
   cc->reg_signals = NULL;
 

@@ -292,6 +292,13 @@ vde_pkt *vde_pkt_new(unsigned int payload_sz, unsigned int head,
   return pkt;
 }
 
+void mempool_init(void)
+{
+	pthread_mutex_init(&mempool_lock, NULL);
+	pthread_mutex_init(&references_lock, NULL);
+
+}
+
 // When a packet is read from the network by a connection the payload always
 // follows the header, so head size and tail size are zero.
 // If a connection implementation does not handle generic vde data but specific

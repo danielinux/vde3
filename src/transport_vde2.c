@@ -23,6 +23,7 @@
 #include <sys/un.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <pthread.h>
 
 #include <vde3.h>
 
@@ -33,6 +34,8 @@
 #include <vde3/context.h>
 #include <vde3/packet.h>
 #include <vde3/mempool.h>
+#include <vde3/queue.h>
+
 
 #define LISTEN_QUEUE 15
 #define MAX_HEAD_SZ 4 /* size of prellocated space before payload */
@@ -77,7 +80,8 @@ typedef struct {
   void *data_ev_wr;
   int ctl_fd;
   void *ctl_ev;
-  vde_queue *pkt_queue;
+  queue pkt_queue;
+  pthread_t dequeuer;
   struct sockaddr_un local_sa;
   struct sockaddr_un remote_sa;
   vde2_request *remote_request;
@@ -191,7 +195,7 @@ void vde2_conn_read_data_event(int data_fd, short event_type, void *arg)
   }
 }
 
-void vde2_conn_write_data_event(int data_fd, short event_type, void *arg)
+void *v2_dequeuer(void *arg)
 {
   int len;
   vde_pkt *pkt;
@@ -199,13 +203,10 @@ void vde2_conn_write_data_event(int data_fd, short event_type, void *arg)
   vde2_conn *v2_conn = (vde2_conn *)arg;
   vde_connection *conn = v2_conn->conn;
 
-  /* TODO DLX: rewrite with different queue policy,
-   * because this circular re-insertion mechanism with
-   * multiple retries causes ugly re-ordering.
-   */
-
-  pkt = vde_queue_pop_tail(v2_conn->pkt_queue);
-  while (pkt != NULL) {
+  while(1) {
+    pkt = dequeue(&v2_conn->pkt_queue);
+    if (!pkt)
+		continue;
     len = sendto(v2_conn->data_fd, pkt->payload, pkt->hdr->pkt_len, 0,
                  (const struct sockaddr *)&v2_conn->remote_sa,
                  sizeof(struct sockaddr_un));
@@ -217,7 +218,7 @@ void vde2_conn_write_data_event(int data_fd, short event_type, void *arg)
       if (cb_errno == EPIPE) {
         goto err_close;
       }
-    } else if ((len < 0) && (errno != EAGAIN)) {
+    } else if (len < 0) {
       if (vde_connection_call_error(conn, pkt, CONN_WRITE_CLOSED)) {
         cb_errno = errno;
       }
@@ -229,35 +230,13 @@ void vde2_conn_write_data_event(int data_fd, short event_type, void *arg)
                     __PRETTY_FUNCTION__, v2_conn->data_fd);
         break;
       }
-    } else { /* (0 < len < pkt_len) || (len < 0 && errno == EAGAIN) */
-      pkt->numtries++;
-      if (pkt->numtries > vde_connection_get_send_maxtries(conn)) {
-        if (vde_connection_call_error(conn, pkt, CONN_WRITE_DELAY)) {
-          cb_errno = errno;
-        }
-        vdepool_pkt_discard(pkt);
-        if (cb_errno == EPIPE) {
-          goto err_close;
-        }
-      } else {
-        vde_queue_push_tail(v2_conn->pkt_queue, pkt);
-      }
-      break; // give up sending
-    }
-    pkt = vde_queue_pop_tail(v2_conn->pkt_queue);
+	}
   }
-
-  if (pkt == NULL) {
-    vde_context_event_del(vde_connection_get_context(conn),
-                          v2_conn->data_ev_wr);
-    v2_conn->data_ev_wr = NULL;
-  }
-
-  return;
 
 err_close:
   vde_connection_fini(conn);
   vde_connection_delete(conn);
+  return NULL;
 }
 
 int vde2_conn_write(vde_connection *conn, vde_pkt *pkt)
@@ -265,19 +244,6 @@ int vde2_conn_write(vde_connection *conn, vde_pkt *pkt)
   vde_pkt *v2_pkt;
   vde2_conn *v2_conn = vde_connection_get_priv(conn);
 
-  if (vde_queue_get_length(v2_conn->pkt_queue) >= MAXQLEN) {
-    vde_warning("%s: packet queue for %d is full, discarding",
-                __PRETTY_FUNCTION__, v2_conn->data_fd);
-    errno = EAGAIN;
-    return -1; // discard pkt
-  }
-  if (pkt->data_size > VDE_PACKET_SIZE) {
-    // XXX: should alloc a struct greater than sizeof(vde_pkt)
-    vde_warning("%s: packet size (%d) larger than vde_pkt (%d), discarding",
-                __PRETTY_FUNCTION__, pkt->data_size, VDE_PACKET_SIZE);
-    errno = EBADMSG;
-    return -1;
-  }
   v2_pkt = vdepool_pkt_compact_cpy(pkt);
   if (v2_pkt == NULL) {
     vde_warning("%s: cannot alloc new pkt, discarding", __PRETTY_FUNCTION__);
@@ -285,27 +251,18 @@ int vde2_conn_write(vde_connection *conn, vde_pkt *pkt)
     return -1;
   }
 
-  v2_pkt->numtries = 0;
-
-  // XXX: check push ok
-  vde_queue_push_head(v2_conn->pkt_queue, v2_pkt);
-
-  if (v2_conn->data_ev_wr == NULL) {
-    v2_conn->data_ev_wr = vde_context_event_add(
-                            vde_connection_get_context(conn),
-                            v2_conn->data_fd,
-                            VDE_EV_WRITE|VDE_EV_PERSIST,
-							0, 
-                            //vde_connection_get_send_maxtimeout(conn),
-                            &vde2_conn_write_data_event,
-                            (void *)v2_conn);
+  v2_pkt = vdepool_pkt_compact_cpy(pkt);
+  if (v2_pkt == NULL) {
+    vde_warning("%s: cannot alloc new pkt, discarding", __PRETTY_FUNCTION__);
+    errno = ENOMEM;
+    return -1;
   }
+  enqueue(&v2_conn->pkt_queue, pkt);
   return 0;
 }
 
 void vde2_conn_close(vde_connection *conn)
 {
-  vde_pkt *pkt;
   vde2_conn *v2_conn = vde_connection_get_priv(conn);
   vde_context *ctx = vde_connection_get_context(conn);
 
@@ -330,12 +287,7 @@ void vde2_conn_close(vde_connection *conn)
   if (v2_conn->remote_request) {
     vde_free(v2_conn->remote_request);
   }
-  pkt = vde_queue_pop_tail(v2_conn->pkt_queue);
-  while (pkt != NULL) {
-	vdepool_pkt_discard(pkt);
-    pkt = vde_queue_pop_tail(v2_conn->pkt_queue);
-  }
-  vde_queue_delete(v2_conn->pkt_queue);
+  //XXX// vde_queue_delete(v2_conn->pkt_queue);
 
   vde_free(v2_conn);
 }
@@ -444,6 +396,7 @@ void vde2_srv_send_request(int ctl_fd, short event_type, void *arg)
                                               (void *)v2_conn);
 
   vde_transport_call_cm_accept_cb(v2_conn->transport, conn);
+  /* XXX start dequeuer here? */
 
   return;
 
@@ -538,11 +491,15 @@ void vde2_accept(int listen_fd, short event_type, void *arg)
     vde_warning("%s: accept %s", __PRETTY_FUNCTION__, strerror(errno));
     return;
   }
+
+/*
   if (fcntl(new, F_SETFL, O_NONBLOCK) < 0) {
     vde_warning("%s: cannot set O_NONBLOCK for new connection %s",
                 __PRETTY_FUNCTION__, strerror(errno));
     goto error_close;
   }
+*/
+
   if (vde_connection_new(&conn)) {
     vde_error("%s: cannot create connection", __PRETTY_FUNCTION__);
     goto error_close;
@@ -556,20 +513,27 @@ void vde2_accept(int listen_fd, short event_type, void *arg)
   v2_conn->ctl_fd = new;
   v2_conn->conn = conn;
   v2_conn->transport = component;
-  // XXX: check init result
-  v2_conn->pkt_queue = vde_queue_init();
+  printf("LINE: %d\n", __LINE__);
+  queue_init(&v2_conn->pkt_queue);
+  printf("LINE: %d\n", __LINE__);
+  qfifo_setup(&v2_conn->pkt_queue, MAXQLEN * VDE_PACKET_SIZE);
 
   // XXX: check error on list
   tr->pending_conns = vde_list_prepend(tr->pending_conns, v2_conn);
+  printf("LINE: %d\n", __LINE__);
+
+  pthread_create(&v2_conn->dequeuer, 0, v2_dequeuer, conn);
+  printf("LINE: %d\n", __LINE__);
 
   vde_connection_init(conn, ctx, sizeof(struct eth_frame), &vde2_conn_write,
                       &vde2_conn_close, (void *)v2_conn);
+  printf("LINE: %d\n", __LINE__);
 
   // XXX: check event NULL and define a timeout
   v2_conn->ctl_ev = vde_context_event_add(ctx, v2_conn->ctl_fd, VDE_EV_READ,
                                           NULL, &vde2_srv_get_request,
                                           (void *)v2_conn);
-
+  printf("LINE: %d\n", __LINE__);
   return;
 
 error_conn_del:
