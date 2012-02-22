@@ -206,7 +206,7 @@ void *v2_dequeuer(void *arg)
   while(1) {
     pkt = dequeue(&v2_conn->pkt_queue);
     if (!pkt)
-		continue;
+		  continue;
     len = sendto(v2_conn->data_fd, pkt->payload, pkt->hdr->pkt_len, 0,
                  (const struct sockaddr *)&v2_conn->remote_sa,
                  sizeof(struct sockaddr_un));
@@ -216,26 +216,21 @@ void *v2_dequeuer(void *arg)
       }
       vdepool_pkt_discard(pkt);
       if (cb_errno == EPIPE) {
-        goto err_close;
+        printf("LINE %d\n", __LINE__);
+		    break;
       }
     } else if (len < 0) {
-      if (vde_connection_call_error(conn, pkt, CONN_WRITE_CLOSED)) {
-        cb_errno = errno;
-      }
+      cb_errno = errno;
       vdepool_pkt_discard(pkt);
-      if (cb_errno == EPIPE) {
-        goto err_close;
-      } else {
-        vde_warning("%s: fatal error on data_fd %d but connection not closed",
-                    __PRETTY_FUNCTION__, v2_conn->data_fd);
-        break;
-      }
-	}
+      vde_connection_call_error(conn, pkt, CONN_WRITE_CLOSED);
+      break;
+	  }
   }
-
-err_close:
-  vde_connection_fini(conn);
-  vde_connection_delete(conn);
+  /* Next two lines lead to double-free corruption. Check whether the
+   * action is duplicated from the error callback? TODO.
+   */
+  //vde_connection_fini(conn);
+  //vde_connection_delete(conn);
   printf("Dequeuer terminated.\n");
   return NULL;
 }
@@ -251,7 +246,7 @@ int vde2_conn_write(vde_connection *conn, vde_pkt *pkt)
     errno = ENOMEM;
     return -1;
   }
-  enqueue(&v2_conn->pkt_queue, pkt);
+  enqueue(&v2_conn->pkt_queue, v2_pkt);
   return 0;
 }
 
@@ -332,11 +327,7 @@ void vde2_srv_send_request(int ctl_fd, short event_type, void *arg)
               strerror(errno));
     goto error;
   }
-  if (fcntl(v2_conn->data_fd, F_SETFL, O_NONBLOCK) < 0) {
-    vde_error("%s: cannot set O_NONBLOCK for datagram socket: %s",
-              __PRETTY_FUNCTION__, strerror(errno));
-    goto error;
-  }
+
 #ifdef VDE_DARWIN
   if (setsockopt(v2_conn->data_fd, SOL_SOCKET, SO_SNDBUF, &sockbufsize,
       optsize) < 0) {
@@ -513,7 +504,7 @@ void vde2_accept(int listen_fd, short event_type, void *arg)
   // XXX: check error on list
   tr->pending_conns = vde_list_prepend(tr->pending_conns, v2_conn);
 
-  pthread_create(&v2_conn->dequeuer, 0, v2_dequeuer, conn);
+  pthread_create(&v2_conn->dequeuer, 0, v2_dequeuer, v2_conn);
 
   vde_connection_init(conn, ctx, sizeof(struct eth_frame), &vde2_conn_write,
                       &vde2_conn_close, (void *)v2_conn);
