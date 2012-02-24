@@ -51,7 +51,7 @@ int vde_context_register_module(vde_context *ctx, vde_module *module);
 static inline void *vde_context_event_add(vde_context *ctx, int fd,
                                           short events,
                                           const struct timeval *timeout,
-                                          event_cb cb, void *arg)
+                                          vde_event_cb cb, void *arg)
 {
   vde_assert(ctx != NULL);
   vde_assert(ctx->initialized == 1);
@@ -70,7 +70,7 @@ static inline void vde_context_event_del(vde_context *ctx, void *event)
 
 static inline void *vde_context_timeout_add(vde_context *ctx, short events,
                                             const struct timeval *timeout,
-                                            event_cb cb, void *arg)
+                                            vde_event_cb cb, void *arg)
 {
   vde_assert(ctx != NULL);
   vde_assert(ctx->initialized == 1);
@@ -86,5 +86,6 @@ static inline void vde_context_timeout_del(vde_context *ctx, void *timeout)
 
   ctx->event_handler.timeout_del(timeout);
 }
+
 
 #endif /* __VDE3_CONTEXT_H__ */
