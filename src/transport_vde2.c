@@ -222,6 +222,8 @@ void *v2_dequeuer(void *arg)
     } else if (len < 0) {
       cb_errno = errno;
       vdepool_pkt_discard(pkt);
+      if (cb_errno == EAGAIN)
+       continue;
       vde_connection_call_error(conn, pkt, CONN_WRITE_CLOSED);
       break;
 	  }
@@ -235,6 +237,17 @@ void *v2_dequeuer(void *arg)
   return NULL;
 }
 
+#define TRY_DIRECT_SEND 0
+
+#if TRY_DIRECT_SEND
+static inline int vde2_conn_try_send(vde2_conn *v2_conn, vde_pkt *pkt)
+{
+    return sendto(v2_conn->data_fd, pkt->payload, pkt->hdr->pkt_len, 0,
+                 (const struct sockaddr *)&v2_conn->remote_sa,
+                 sizeof(struct sockaddr_un));;
+}
+#endif
+
 int vde2_conn_write(vde_connection *conn, vde_pkt *pkt)
 {
   vde_pkt *v2_pkt;
@@ -246,7 +259,16 @@ int vde2_conn_write(vde_connection *conn, vde_pkt *pkt)
     errno = ENOMEM;
     return -1;
   }
+#if TRY_DIRECT_SEND
+  if ((v2_conn->pkt_queue.may_enqueue(&v2_conn->pkt_queue, v2_pkt)) && vde2_conn_try_send(v2_conn, v2_pkt) < 0)
+    enqueue(&v2_conn->pkt_queue, v2_pkt);
+  else {
+    vdepool_pkt_discard(v2_pkt);
+    vde_connection_call_write(conn, pkt);
+  }
+#else
   enqueue(&v2_conn->pkt_queue, v2_pkt);
+#endif
   return 0;
 }
 
@@ -477,13 +499,15 @@ void vde2_accept(int listen_fd, short event_type, void *arg)
     return;
   }
 
-/*
+
+	/* SET NONBLOCK */
+#if TRY_DIRECT_SEND
   if (fcntl(new, F_SETFL, O_NONBLOCK) < 0) {
     vde_warning("%s: cannot set O_NONBLOCK for new connection %s",
                 __PRETTY_FUNCTION__, strerror(errno));
     goto error_close;
   }
-*/
+#endif
 
   if (vde_connection_new(&conn)) {
     vde_error("%s: cannot create connection", __PRETTY_FUNCTION__);

@@ -8,9 +8,6 @@
 #include <pthread.h>
 #include <assert.h>
 
-
-
-
 void enqueue(queue *q, vde_pkt *b)
 {
 	pthread_mutex_lock(&q->lock);

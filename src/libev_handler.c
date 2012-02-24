@@ -25,7 +25,13 @@
 
 /* Standard way for embedding this library */
 #define EV_MULTIPLICITY 0
-#define EV_FORK_ENABLE 0
+#define EV_NO_THREADS 1
+#define EV_USE_4HEAP 1
+#define EV_USE_POLL 0
+#define EV_USE_EPOLL 1
+#define EV_USE_SELECT 0
+#define EV_USE_NANOSLEEP 1
+#define EV_USE_FLOOR 1
 #define EV_STANDALONE 1
 #include <libev/ev.c>
 
