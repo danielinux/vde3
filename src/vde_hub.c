@@ -17,9 +17,12 @@
 
 #include <vde3.h>
 #include <stdio.h>
-#include <event.h>
+#define EV_MULTIPLICITY 0
+#define EV_FORK_ENABLE 0
+#define EV_STANDALONE 1
+#include <libev/ev.h>
 
-extern vde_event_handler libevent_eh;
+extern vde_event_handler libev_eh;
 
 int main(int argc, char **argv)
 {
@@ -29,14 +32,18 @@ int main(int argc, char **argv)
   vde_component *ctransport, *cengine, *ccm;
   vde_sobj *params;
 
-  event_init();
+  //event_init();
+  if(!ev_default_loop(0)) {
+    perror("ev_default_loop");
+    exit(1);
+  }
 
   res = vde_context_new(&ctx);
   if (res) {
     printf("no new ctx, %d\n", res);
   }
 
-  res = vde_context_init(ctx, &libevent_eh, NULL);
+  res = vde_context_init(ctx, &libev_eh, NULL);
   if (res) {
     printf("no init ctx: %d\n", res);
   }
@@ -94,7 +101,8 @@ int main(int argc, char **argv)
     printf("no listen on ccm: %d\n", res);
   }
 
-  event_dispatch();
+  ev_run(0);
+  //event_dispatch();
 
   return 0;
 }
