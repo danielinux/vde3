@@ -59,7 +59,7 @@
  * The events argument must contain the event(s) which are available on fd,
  * plus VDE_EV_TIMEOUT if the callback is being called due to a timeout.
  */
-typedef void (*event_cb)(int fd, short events, void *arg);
+typedef void (*vde_event_cb)(int fd, short events, void *arg);
 
 /**
  * @brief This is the event handler the application must supply.
@@ -97,7 +97,7 @@ typedef struct {
    *
    */
   void *(*event_add)(int fd, short events, const struct timeval *timeout,
-                     event_cb cb, void *arg);
+                     vde_event_cb cb, void *arg);
 
   /**
    * @brief Function to delete an event
@@ -126,7 +126,7 @@ typedef struct {
    * callback is called repeatedly every timeout until timeout_del is called.
    *
    */
-  void *(*timeout_add)(const struct timeval *timeout, short events, event_cb cb,
+  void *(*timeout_add)(const struct timeval *timeout, short events, vde_event_cb cb,
                       void *arg);
 
   /**

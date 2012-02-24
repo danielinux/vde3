@@ -42,7 +42,7 @@
 struct rtimeout {
   struct event *ev;
   struct timeval *timeout;
-  event_cb cb;
+  vde_event_cb cb;
   void *arg;
 };
 
@@ -59,7 +59,7 @@ void rtimeout_cb(int fd, short events, void *arg)
 
 // XXX check if libevent has been initialized?
 void *libevent_event_add(int fd, short events, const struct timeval *timeout,
-                         event_cb cb, void *arg)
+                         vde_event_cb cb, void *arg)
 {
   struct event *ev;
 
@@ -85,7 +85,7 @@ void libevent_event_del(void *event)
 }
 
 void *libevent_timeout_add(const struct timeval *timeout, short events,
-                           event_cb cb, void *arg)
+                           vde_event_cb cb, void *arg)
 {
   struct event *ev;
   struct rtimeout *rt;
