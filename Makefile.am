@@ -100,9 +100,15 @@ src_libvde_la_CPPFLAGS = \
   $(AM_CPPFLAGS)
 
 # vde_hub
+if LIBEVENT
+src_vde_hub_SOURCES = src/vde_hub.c src/libevent_handler.c
+src_vde_hub_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/src/include/ -D_VDE_LIBEVENT
+src_vde_hub_LDADD = src/libvde.la $(JSONC_LIBS) -lpthread -levent
+else
 src_vde_hub_SOURCES = src/vde_hub.c src/libev_handler.c
+src_vde_hub_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/src/include/ -D_VDE_LIBEV
 src_vde_hub_LDADD = src/libvde.la $(JSONC_LIBS) -lpthread
-#src_vde_hub_LDFLAGS = -levent
+endif
 
 # vde_hub2hub
 src_vde_hub2hub_SOURCES = src/vde_hub2hub.c src/libevent_handler.c

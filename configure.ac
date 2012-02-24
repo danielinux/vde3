@@ -23,8 +23,6 @@ AM_PROG_CC_C_O
 AC_PROG_LIBTOOL
 
 # Checks for mandatory dependencies
-VDE_CHECK_LIB_HEADER([event], [event_init], [event.h], ,
-                     AC_MSG_ERROR([Could not find libevent]))
 
 VDE_CHECK_LIB_HEADER([pthread], [pthread_create], [pthread.h], ,
                   AC_MSG_ERROR([Could not find pthread]))
@@ -78,6 +76,24 @@ AC_ARG_ENABLE(debug,
                  [compile with debug checks and symbols (yes)]),
   [enable_debug=$enableval],
   [enable_debug=yes])
+AC_ARG_ENABLE(libevent,
+  AS_HELP_STRING([--enable-libevent],
+                 [link with libevent support (yes)]),
+  [enable_libevent=$enableval],
+  [enable_libevent=yes])
+
+if test x$enable_libevent = xyes; then
+  VDE_LIBEVENT_CFLAGS=-D_VDE_LIBEVENT
+  VDE_LIBEVENT_LDFLAGS=-levent
+  VDE_CHECK_LIB_HEADER([event], [event_init], [event.h], ,
+                   AC_MSG_ERROR([Could not find libevent]))
+else
+  VDE_LIBEVENT_CFLAGS=-D_VDE_LIBEV -fno-strict-alias
+  VDE_LIBEVENT_LDFLAGS=
+fi
+AM_CONDITIONAL(LIBEVENT, [test x$enable_libevent = xyes])
+
+
 if test x$enable_debug = xyes; then
   VDE_CPPFLAGS="$VDE_CPPFLAGS -DVDE3_DEBUG"
   VDE_CFLAGS="$VDE_CFLAGS -ggdb"

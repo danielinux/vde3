@@ -17,12 +17,25 @@
 
 #include <vde3.h>
 #include <stdio.h>
-#define EV_MULTIPLICITY 0
-#define EV_FORK_ENABLE 0
-#define EV_STANDALONE 1
-#include <libev/ev.h>
 
+#ifdef _VDE_LIBEVENT
+#  include <event.h>
+extern vde_event_handler libevent_eh;
+#define get_event_eh() (&libevent_eh)
+#else
+#	 define EV_MULTIPLICITY 0
+#	 define EV_FORK_ENABLE 0
+#	 define EV_STANDALONE 1
+#	 include <libev/ev.h>
+#	 define event_init()  if(!ev_default_loop(0)) {	\
+    perror("ev_default_loop");	\
+    exit(1);	\
+   }
+#  define event_dispatch()   ev_run(0)
 extern vde_event_handler libev_eh;
+#define get_event_eh() (&libev_eh)
+#endif
+
 
 int main(int argc, char **argv)
 {
@@ -32,18 +45,14 @@ int main(int argc, char **argv)
   vde_component *ctransport, *cengine, *ccm;
   vde_sobj *params;
 
-  //event_init();
-  if(!ev_default_loop(0)) {
-    perror("ev_default_loop");
-    exit(1);
-  }
+  event_init();
 
   res = vde_context_new(&ctx);
   if (res) {
     printf("no new ctx, %d\n", res);
   }
 
-  res = vde_context_init(ctx, &libev_eh, NULL);
+  res = vde_context_init(ctx, get_event_eh(), NULL);
   if (res) {
     printf("no init ctx: %d\n", res);
   }
@@ -101,8 +110,7 @@ int main(int argc, char **argv)
     printf("no listen on ccm: %d\n", res);
   }
 
-  ev_run(0);
-  //event_dispatch();
+  event_dispatch();
 
   return 0;
 }
