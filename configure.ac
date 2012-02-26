@@ -88,7 +88,7 @@ if test x$enable_libevent = xyes; then
   VDE_CHECK_LIB_HEADER([event], [event_init], [event.h], ,
                    AC_MSG_ERROR([Could not find libevent]))
 else
-  VDE_LIBEVENT_CFLAGS=-D_VDE_LIBEV -fno-strict-alias
+  VDE_LIBEVENT_CFLAGS="-D_VDE_LIBEV -fno-strict-aliasing"
   VDE_LIBEVENT_LDFLAGS=
 fi
 AM_CONDITIONAL(LIBEVENT, [test x$enable_libevent = xyes])
@@ -96,10 +96,10 @@ AM_CONDITIONAL(LIBEVENT, [test x$enable_libevent = xyes])
 
 if test x$enable_debug = xyes; then
   VDE_CPPFLAGS="$VDE_CPPFLAGS -DVDE3_DEBUG"
-  VDE_CFLAGS="$VDE_CFLAGS -ggdb"
+  VDE_CFLAGS="$VDE_CFLAGS -g -ggdb"
   CFLAGS="" # reset CFLAGS otherwise defaults to -g -O2
 else
-  VDE_CFLAGS="$VDE_CFLAGS -O2"
+  VDE_CFLAGS="$VDE_CFLAGS -O3"
 fi
 
 # optional check for check

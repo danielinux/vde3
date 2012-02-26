@@ -4,6 +4,7 @@
  *
  */
 #include <vde3/queue.h>
+#include <vde3/mempool.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <assert.h>
@@ -11,7 +12,6 @@
 void enqueue(queue *q, vde_pkt *b)
 {
 	pthread_mutex_lock(&q->lock);
-
 	if (!q->may_enqueue(q, b)) {
 		vdepool_pkt_discard(b);
 		pthread_mutex_unlock(&q->lock);
@@ -56,7 +56,6 @@ int qunlimited_may_enqueue(queue *q, vde_pkt *b)
 {
 	return 1;
 }
-
 
 void qunlimited_setup(queue *q)
 {

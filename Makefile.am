@@ -109,6 +109,8 @@ src_vde_hub_SOURCES = src/vde_hub.c src/libev_handler.c
 src_vde_hub_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/src/include/ -D_VDE_LIBEV
 src_vde_hub_LDADD = src/libvde.la $(JSONC_LIBS) -lpthread
 endif
+## Enable for profiling
+#src_vde_hub_LDFLAGS = -pg
 
 # vde_hub2hub
 src_vde_hub2hub_SOURCES = src/vde_hub2hub.c src/libevent_handler.c

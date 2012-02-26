@@ -17,11 +17,13 @@
 
 #include <vde3.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #ifdef _VDE_LIBEVENT
 #  include <event.h>
+#  include <signal.h>
 extern vde_event_handler libevent_eh;
-#define get_event_eh() (&libevent_eh)
+#  define get_event_eh() (&libevent_eh)
 #else
 #	 define EV_MULTIPLICITY 0
 #	 define EV_FORK_ENABLE 0
@@ -35,6 +37,12 @@ extern vde_event_handler libevent_eh;
 extern vde_event_handler libev_eh;
 #define get_event_eh() (&libev_eh)
 #endif
+
+void sighandler(int signo)
+{
+  printf("Exiting...\n");
+  exit(0);
+}
 
 
 int main(int argc, char **argv)
@@ -110,6 +118,7 @@ int main(int argc, char **argv)
     printf("no listen on ccm: %d\n", res);
   }
 
+  signal(SIGINT, &sighandler);
   event_dispatch();
 
   return 0;

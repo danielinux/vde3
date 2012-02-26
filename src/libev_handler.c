@@ -31,33 +31,16 @@
 #define EV_USE_EPOLL 1
 #define EV_USE_SELECT 0
 #define EV_USE_NANOSLEEP 1
+#define EV_USE_REALTIME 0
 #define EV_USE_FLOOR 1
+#define EV_IDLE_ENABLE 0
+#define EV_PERIODIC_ENABLE 0
 #define EV_STANDALONE 1
 #include <libev/ev.c>
 
 
-static inline int vde_to_libev(short events)
-{
-  int ret = 0;
-  if (events & VDE_EV_READ)
-    ret |= EV_READ;
-  if (events & VDE_EV_WRITE)
-    ret |= EV_WRITE;
-  return ret;
-}
-
-static inline short libev_to_vde(short revents)
-{
-  short ret = 0;
-  if (revents & EV_READ)
-    ret |= VDE_EV_READ;
-  if (revents & EV_WRITE)
-    ret |= VDE_EV_WRITE;
-  if (revents & EV_TIMEOUT)
-    ret |= VDE_EV_TIMEOUT;
-  return ret;
-}
-
+#define vde_to_libev(e) ((int) (((VDE_EV_READ & e)?EV_READ:0) | (((VDE_EV_WRITE & e)?EV_WRITE:0))))
+#define libev_to_vde(r) ((short)(r & 0xFFFF))
 #define TIMEVAL_TO_SEC(x) ((double)(x->tv_sec) + ((double)(x->tv_usec) * (.000001)))
 
 

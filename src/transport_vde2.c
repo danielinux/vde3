@@ -202,7 +202,6 @@ void *v2_dequeuer(void *arg)
   int cb_errno = 0;
   vde2_conn *v2_conn = (vde2_conn *)arg;
   vde_connection *conn = v2_conn->conn;
-
   while(1) {
     pkt = dequeue(&v2_conn->pkt_queue);
     if (!pkt)
@@ -216,7 +215,6 @@ void *v2_dequeuer(void *arg)
       }
       vdepool_pkt_discard(pkt);
       if (cb_errno == EPIPE) {
-        printf("LINE %d\n", __LINE__);
 		    break;
       }
     } else if (len < 0) {
@@ -260,9 +258,9 @@ int vde2_conn_write(vde_connection *conn, vde_pkt *pkt)
     return -1;
   }
 #if TRY_DIRECT_SEND
-  if ((v2_conn->pkt_queue.may_enqueue(&v2_conn->pkt_queue, v2_pkt)) && vde2_conn_try_send(v2_conn, v2_pkt) < 0)
+  if ((v2_conn->pkt_queue.may_enqueue(&v2_conn->pkt_queue, v2_pkt)) && vde2_conn_try_send(v2_conn, v2_pkt) < 0) {
     enqueue(&v2_conn->pkt_queue, v2_pkt);
-  else {
+  } else {
     vdepool_pkt_discard(v2_pkt);
     vde_connection_call_write(conn, pkt);
   }
@@ -492,6 +490,7 @@ void vde2_accept(int listen_fd, short event_type, void *arg)
   vde_context *ctx = vde_component_get_context(component);
   vde2_tr *tr = (vde2_tr *)vde_component_get_priv(component);
 
+
   // XXX: consistency check: is listen_fd the right one?
   new = accept(listen_fd, &sa, &sa_len);
   if (new < 0) {
@@ -568,12 +567,15 @@ int vde2_listen(vde_component *component)
               strerror(errno));
     goto error_close;
   }
+
+#if 0
   if (fcntl(tr->listen_fd, F_SETFL, O_NONBLOCK) < 0) {
     tmp_errno = errno;
     vde_error("%s: Could not set O_NONBLOCK: %s", __PRETTY_FUNCTION__,
               strerror(errno));
     goto error_close;
   }
+#endif
   if (((mkdir(tr->vdesock_dir, 0777) < 0) && (errno != EEXIST))) {
     tmp_errno = errno;
     vde_error("%s: Could not create vdesock directory %s: %s",
