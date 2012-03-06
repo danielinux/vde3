@@ -24,6 +24,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#include <sys/poll.h>
 
 #include <vde3.h>
 
@@ -54,7 +55,8 @@
 #define UNIX_PATH_MAX 108
 
 // taken from vde2 packetq.c
-#define MAXQLEN 4192
+//#define MAXQLEN 4192
+#define MAXQLEN 512
 // end of vde2 packetq.c
 
 // taken from vde2 datasock.c
@@ -145,50 +147,62 @@ void vde2_conn_read_data_event(int data_fd, short event_type, void *arg)
   struct sockaddr sock;
   int len;
   int cb_errno = 0;
+  int iter;
   socklen_t socklen = sizeof(sock);
   vde2_conn *v2_conn = (vde2_conn *)arg;
   vde_connection *conn = v2_conn->conn;
-
-  if ( (vde_connection_get_pkt_headsize(conn) <= MAX_HEAD_SZ)
-        && (vde_connection_get_pkt_tailsize(conn) <= MAX_TAIL_SZ) ) {
-	pkt = vde_pkt_new(VDE_PACKET_SIZE, vde_connection_get_pkt_headsize(conn), vde_connection_get_pkt_tailsize(conn));
-	if (!pkt) {
-		vde_error("%s: Cannot allocate memory for received packet, skipping.", __PRETTY_FUNCTION__);
-		return;
-	}
-  } else {
-    vde_warning("%s: requested head + tail size too large, skipping",
-                __PRETTY_FUNCTION__);
-    return;
-  }
-
-  len = recvfrom(v2_conn->data_fd, pkt->payload, sizeof(struct eth_frame), 0,
-                 &sock, &socklen);
-  // XXX: check received sock with remote path??
-  if (len >= sizeof(struct eth_hdr)) {
-    // XXX: set hdr version and type
-    pkt->hdr->pkt_len = len;
-
-	/* Reduce data size to match current content */
-	pkt->data_size = len;
-    if (vde_connection_call_read(conn, pkt)) {
+  for (iter = 0; iter < MAXQLEN; iter++) {
+    struct pollfd connp;
+    connp.fd = v2_conn->data_fd;
+    connp.events = POLLIN;
+    if (poll(&connp, 1, 0) < 1) {
       cb_errno = errno;
+      break;
     }
-  } else if (len < 0) {
-    if (errno == EAGAIN) {
-      vde_warning("%s: got EAGAIN on data_fd %d", __PRETTY_FUNCTION__,
-                  v2_conn->data_fd);
+
+    if ( (vde_connection_get_pkt_headsize(conn) <= MAX_HEAD_SZ)
+          && (vde_connection_get_pkt_tailsize(conn) <= MAX_TAIL_SZ) ) {
+      pkt = vde_pkt_new(VDE_PACKET_SIZE, vde_connection_get_pkt_headsize(conn), vde_connection_get_pkt_tailsize(conn));
+      if (!pkt) {
+        vde_error("%s: Cannot allocate memory for received packet, skipping.", __PRETTY_FUNCTION__);
+        return;
+      }
     } else {
-    // XXX: handle this error situation, call error_cb?
-    vde_warning("%s: error reading from data_fd %d: %s", __PRETTY_FUNCTION__,
-                v2_conn->data_fd, strerror(errno));
+       vde_warning("%s: requested head + tail size too large, skipping",
+                  __PRETTY_FUNCTION__);
+      continue;
     }
-  } else if (len == 0) {
-    vde_warning("%s: EOF from data_fd %d: %s", __PRETTY_FUNCTION__,
-                v2_conn->data_fd, strerror(errno));
+
+
+    len = recvfrom(v2_conn->data_fd, pkt->payload, sizeof(struct eth_frame), 0,
+                   &sock, &socklen);
+    // XXX: check received sock with remote path??
+    if (len >= sizeof(struct eth_hdr)) {
+      // XXX: set hdr version and type
+      pkt->hdr->pkt_len = len;
+
+      /* Reduce data size to match current content */
+      pkt->data_size = len;
+      if (vde_connection_call_read(conn, pkt)) {
+        cb_errno = errno;
+      }
+      continue;
+    } else if (len < 0) {
+      if (errno == EAGAIN) {
+        vde_warning("%s: got EAGAIN on data_fd %d", __PRETTY_FUNCTION__,
+                    v2_conn->data_fd);
+      } else {
+      // XXX: handle this error situation, call error_cb?
+      vde_warning("%s: error reading from data_fd %d: %s", __PRETTY_FUNCTION__,
+                  v2_conn->data_fd, strerror(errno));
+      }
+    } else if (len == 0) {
+      vde_warning("%s: EOF from data_fd %d: %s", __PRETTY_FUNCTION__,
+                  v2_conn->data_fd, strerror(errno));
+    }
+    break; /* On len invalid, or error */
   }
   // XXX: free packet if previously allocated with dynamic allocation
-
   if (cb_errno == EPIPE) {
     vde_connection_fini(conn);
     vde_connection_delete(conn);
@@ -231,7 +245,6 @@ void *v2_dequeuer(void *arg)
    */
   //vde_connection_fini(conn);
   //vde_connection_delete(conn);
-  printf("Dequeuer terminated.\n");
   return NULL;
 }
 
@@ -521,7 +534,8 @@ void vde2_accept(int listen_fd, short event_type, void *arg)
   v2_conn->conn = conn;
   v2_conn->transport = component;
   queue_init(&v2_conn->pkt_queue);
-  qfifo_setup(&v2_conn->pkt_queue, MAXQLEN * VDE_PACKET_SIZE);
+  //qfifo_setup(&v2_conn->pkt_queue, MAXQLEN * VDE_PACKET_SIZE);
+  qunlimited_setup(&v2_conn->pkt_queue);
 
   // XXX: check error on list
   tr->pending_conns = vde_list_prepend(tr->pending_conns, v2_conn);

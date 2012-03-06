@@ -58,7 +58,6 @@ evquick_event *evquick_addevent(int fd, short events,
 	e->next = ctx->events;
 	ctx->events = e;
 	ctx->n_events++;
-	printf("ADDEVENT\n");
 	return e;
 }
 
@@ -186,14 +185,14 @@ static void rebuild_poll(void)
 
 static void serve_event(int n)
 {
-	int i = 0;
 	evquick_event *e = ctx->_array + n;
 	if (e) {
 		ctx->last_served = n;
-		if ((ctx->pfd[i].revents & (POLLHUP | POLLERR)) && e->err_callback)
+		if ((ctx->pfd[n].revents & (POLLHUP | POLLERR)) && e->err_callback)
 			e->err_callback(e->fd, ctx->pfd[n].revents, e->arg);
-		else
+		else {
 			e->callback(e->fd, ctx->pfd[n].revents, e->arg);
+		}
 	}
 }
 
