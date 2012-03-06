@@ -490,7 +490,6 @@ void vde2_accept(int listen_fd, short event_type, void *arg)
   vde_context *ctx = vde_component_get_context(component);
   vde2_tr *tr = (vde2_tr *)vde_component_get_priv(component);
 
-
   // XXX: consistency check: is listen_fd the right one?
   new = accept(listen_fd, &sa, &sa_len);
   if (new < 0) {

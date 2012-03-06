@@ -27,6 +27,8 @@ AC_PROG_LIBTOOL
 VDE_CHECK_LIB_HEADER([pthread], [pthread_create], [pthread.h], ,
                   AC_MSG_ERROR([Could not find pthread]))
 
+VDE_CHECK_LIB_HEADER([vdeplug], [vde_send], [libvdeplug.h], , )
+
 PKG_CHECK_MODULES(GLIB, glib-2.0, ,
                   AC_MSG_ERROR([Could not find glib 2.0]))
 
@@ -81,8 +83,16 @@ AC_ARG_ENABLE(libevent,
                  [link with libevent support (yes)]),
   [enable_libevent=$enableval],
   [enable_libevent=yes])
+AC_ARG_ENABLE(evquick,
+  AS_HELP_STRING([--enable-evquick],
+                 [link with evquick support (yes)]),
+  [enable_evquick=$enableval],
+  [enable_evquick=yes])
 
-if test x$enable_libevent = xyes; then
+if test x$enable_evquick = xyes; then
+  VDE_LIBEVENT_CFLAGS=-D_VDE_EVQUICK
+  VDE_LIBEVENT_LDFLAGS=libevquick/libevquick.c
+elif test x$enable_libevent = xyes; then
   VDE_LIBEVENT_CFLAGS=-D_VDE_LIBEVENT
   VDE_LIBEVENT_LDFLAGS=-levent
   VDE_CHECK_LIB_HEADER([event], [event_init], [event.h], ,
@@ -92,6 +102,7 @@ else
   VDE_LIBEVENT_LDFLAGS=
 fi
 AM_CONDITIONAL(LIBEVENT, [test x$enable_libevent = xyes])
+AM_CONDITIONAL(EVQUICK, [test x$enable_evquick = xyes])
 
 
 if test x$enable_debug = xyes; then

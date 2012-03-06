@@ -68,7 +68,7 @@ dist-hook:
 	rm -f $(addprefix $(top_distdir)/,$(WRAPPERS_SRC))
 	rm -f $(addprefix $(top_distdir)/,$(WRAPPERS_HDR))
 
-bin_PROGRAMS = src/vde_hub src/vde_hub2hub
+bin_PROGRAMS = src/vde_hub src/vde_hub2hub tests/speedtest tests/speedtest_recv
 
 
 # dynamic modules
@@ -100,6 +100,11 @@ src_libvde_la_CPPFLAGS = \
   $(AM_CPPFLAGS)
 
 # vde_hub
+if EVQUICK
+src_vde_hub_SOURCES = src/vde_hub.c src/libevquick_handler.c src/libevquick/libevquick.c
+src_vde_hub_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/src/include/ -D_VDE_EVQUICK
+src_vde_hub_LDADD = src/libvde.la $(JSONC_LIBS) -lpthread
+else
 if LIBEVENT
 src_vde_hub_SOURCES = src/vde_hub.c src/libevent_handler.c
 src_vde_hub_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/src/include/ -D_VDE_LIBEVENT
@@ -109,6 +114,7 @@ src_vde_hub_SOURCES = src/vde_hub.c src/libev_handler.c
 src_vde_hub_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/src/include/ -D_VDE_LIBEV
 src_vde_hub_LDADD = src/libvde.la $(JSONC_LIBS) -lpthread
 endif
+endif
 ## Enable for profiling
 #src_vde_hub_LDFLAGS = -pg
 
@@ -117,6 +123,13 @@ src_vde_hub2hub_SOURCES = src/vde_hub2hub.c src/libevent_handler.c
 src_vde_hub2hub_LDADD = src/libvde.la $(JSONC_LIBS)
 src_vde_hub2hub_LDFLAGS = -levent
 
+# speedtest
+tests_speedtest_SOURCES = tests/speedtest.c
+tests_speedtest_CFLAGS = $(AM_CFLAGS) $(CHECK_CFLAGS) -I$(top_srcdir)/src/include/
+tests_speedtest_LDADD = $(CHECK_LIBS) -lvdeplug
+tests_speedtest_recv_SOURCES = tests/speedtest_recv.c
+tests_speedtest_recv_CFLAGS = $(AM_CFLAGS) $(CHECK_CFLAGS) -I$(top_srcdir)/src/include/
+tests_speedtest_recv_LDADD = $(CHECK_LIBS) -lvdeplug
 
 if CHECK
 TESTS = tests/check_context tests/check_vde_ordhash

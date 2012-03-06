@@ -19,7 +19,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#ifdef _VDE_LIBEVENT
+#if defined _VDE_EVQUICK
+#  include "libevquick/libevquick.h"
+#  include <signal.h>
+#  define event_init() evquick_init()
+#  define event_dispatch() evquick_loop()
+extern vde_event_handler evquick_eh;
+#define get_event_eh() (&evquick_eh)
+#elif defined  _VDE_LIBEVENT
 #  include <event.h>
 #  include <signal.h>
 extern vde_event_handler libevent_eh;
